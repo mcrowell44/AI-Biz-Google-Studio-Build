@@ -1,10 +1,15 @@
 
 import React, { useState, useRef } from 'react';
 import { GoogleGenAI, LiveServerMessage, Modality, Type, FunctionDeclaration } from '@google/genai';
-import { Mic, MicOff, Calendar as CalendarIcon, CheckCircle, Mail } from 'lucide-react';
+import { Mic, MicOff, Calendar as CalendarIcon, CheckCircle, Mail, FileText, Send, Database } from 'lucide-react';
 import { encode, decode, decodeAudioData } from '../services/audioUtils';
 
-const VoiceAssistant: React.FC = () => {
+// Define an interface for the props the VoiceAssistant component expects
+interface VoiceAssistantProps {
+  showToast?: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void;
+}
+
+const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ showToast }) => {
   const [isActive, setIsActive] = useState(false);
   const [transcription, setTranscription] = useState<string>("");
   const [status, setStatus] = useState<string>("Click to start demo");
@@ -21,6 +26,7 @@ const VoiceAssistant: React.FC = () => {
   // Mock Calendar Data
   const availableSlots = ["Tomorrow at 10:00 AM", "Tomorrow at 2:00 PM", "Wednesday at 11:30 AM", "Friday at 9:00 AM"];
 
+  // --- FUNCTION DECLARATIONS ---
   const getAvailableSlotsDeclaration: FunctionDeclaration = {
     name: 'getAvailableSlots',
     description: 'Retrieves available time slots for a demo appointment.',
@@ -44,6 +50,88 @@ const VoiceAssistant: React.FC = () => {
       required: ['fullName', 'phone', 'email', 'dateTime']
     }
   };
+
+  const createCalendarEventDeclaration: FunctionDeclaration = {
+    name: 'createCalendarEvent',
+    description: 'Creates a new event in the Google Calendar.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        summary: { type: Type.STRING, description: 'The title of the calendar event.' },
+        description: { type: Type.STRING, description: 'A detailed description of the event.' },
+        startDateTime: { type: Type.STRING, description: 'The start date and time of the event (ISO 8601 format).' },
+        endDateTime: { type: Type.STRING, description: 'The end date and time of the event (ISO 8601 format).' },
+        attendees: {
+          type: Type.ARRAY,
+          items: { type: Type.STRING },
+          description: 'An array of email addresses for attendees.',
+        },
+      },
+      required: ['summary', 'startDateTime', 'endDateTime'],
+    },
+  };
+
+  const getCalendarEventsDeclaration: FunctionDeclaration = {
+    name: 'getCalendarEvents',
+    description: 'Retrieves events from the Google Calendar within a specified time range or by a query.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        startDateTime: { type: Type.STRING, description: 'The start date and time to search for events (ISO 8601 format).' },
+        endDateTime: { type: Type.STRING, description: 'The end date and time to search for events (ISO 8601 format).' },
+        query: { type: Type.STRING, description: 'Optional: A search term to filter events by summary or description.' },
+      },
+      required: ['startDateTime', 'endDateTime'],
+    },
+  };
+
+  const appendSheetRowDeclaration: FunctionDeclaration = {
+    name: 'appendSheetRow',
+    description: 'Appends a new row of data to a specified Google Sheet.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        spreadsheetName: { type: Type.STRING, description: 'The name or ID of the Google Spreadsheet.' },
+        sheetName: { type: Type.STRING, description: 'The name of the specific sheet within the spreadsheet (e.g., "Leads" or "Contacts").' },
+        rowData: {
+          type: Type.ARRAY,
+          items: { type: Type.STRING },
+          description: 'An array of strings, where each string is a value for a cell in the new row.',
+        },
+      },
+      required: ['spreadsheetName', 'sheetName', 'rowData'],
+    },
+  };
+
+  const draftEmailDeclaration: FunctionDeclaration = {
+    name: 'draftEmail',
+    description: 'Creates a new email draft in Gmail.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        to: { type: Type.STRING, description: 'The recipient email address.' },
+        subject: { type: Type.STRING, description: 'The subject line of the email.' },
+        body: { type: Type.STRING, description: 'The full body content of the email.' },
+      },
+      required: ['to', 'subject', 'body'],
+    },
+  };
+
+  const sendEmailDeclaration: FunctionDeclaration = {
+    name: 'sendEmail',
+    description: 'Sends an email immediately using Gmail.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        to: { type: Type.STRING, description: 'The recipient email address.' },
+        subject: { type: Type.STRING, description: 'The subject line of the email.' },
+        body: { type: Type.STRING, description: 'The full body content of the email.' },
+      },
+      required: ['to', 'subject', 'body'],
+    },
+  };
+  // --- END FUNCTION DECLARATIONS ---
+
 
   const stopSession = () => {
     // 1. Close the Live API session
@@ -111,7 +199,6 @@ const VoiceAssistant: React.FC = () => {
 
       scriptProcessor.onaudioprocess = (e) => {
         // CRITICAL FIX: Only send audio if the sessionRef.current is assigned (meaning session is active)
-        // Removed `!isActive` check to avoid stale closure issues and rely directly on sessionRef.current.
         if (!sessionRef.current) return; 
 
         const inputData = e.inputBuffer.getChannelData(0);
@@ -147,8 +234,10 @@ const VoiceAssistant: React.FC = () => {
             // Handle Tool Calls
             if (message.toolCall) {
               for (const fc of message.toolCall.functionCalls) {
+                // --- Existing Booking Tools ---
                 if (fc.name === 'getAvailableSlots') {
                   setBookingStatus({ step: 'Checking availability...' });
+                  showToast?.("Simulating: Checking available slots...", "info");
                   sessionRef.current?.sendToolResponse({
                     functionResponses: {
                       id: fc.id,
@@ -159,14 +248,76 @@ const VoiceAssistant: React.FC = () => {
                 } else if (fc.name === 'scheduleDemo') {
                   const args = fc.args as any;
                   setBookingStatus({ step: 'Confirmed!', details: args });
-                  // Simulate sending email to bookee and admin
-                  console.log(`Email sent to ${args.email} and admin@aibizpro.ai`);
+                  showToast?.(`Simulating: Demo booked for ${args.fullName}`, "success");
+                  console.log(`Simulating: Email sent to ${args.email} and admin@aibizpro.ai`);
                   
                   sessionRef.current?.sendToolResponse({
                     functionResponses: {
                       id: fc.id,
                       name: fc.name,
                       response: { result: "Success. Appointment booked and confirmation emails sent to both user and admin." }
+                    }
+                  });
+                } 
+                // --- New Google Service Tools ---
+                else if (fc.name === 'createCalendarEvent') {
+                  const args = fc.args as any;
+                  showToast?.(`Simulating: Calendar event created: '${args.summary}'`, "success");
+                  console.log("Simulating createCalendarEvent with args:", args);
+                  sessionRef.current?.sendToolResponse({
+                    functionResponses: {
+                      id: fc.id,
+                      name: fc.name,
+                      response: { result: `Calendar event '${args.summary}' created successfully.` }
+                    }
+                  });
+                } else if (fc.name === 'getCalendarEvents') {
+                  const args = fc.args as any;
+                  showToast?.("Simulating: Fetching calendar events...", "info");
+                  console.log("Simulating getCalendarEvents with args:", args);
+                  // Provide mock data for simulation
+                  const mockEvents = [
+                    { summary: "Team Meeting", start: "2026-01-20T10:00:00", end: "2026-01-20T11:00:00" },
+                    { summary: "Client Call with John Doe", start: "2026-01-22T14:00:00", end: "2026-01-22T14:30:00" },
+                  ];
+                  sessionRef.current?.sendToolResponse({
+                    functionResponses: {
+                      id: fc.id,
+                      name: fc.name,
+                      response: { result: `Found ${mockEvents.length} events: ${mockEvents.map(e => e.summary).join(", ")}.` }
+                    }
+                  });
+                } else if (fc.name === 'appendSheetRow') {
+                  const args = fc.args as any;
+                  showToast?.(`Simulating: Appending row to sheet '${args.sheetName}'`, "success");
+                  console.log("Simulating appendSheetRow with args:", args);
+                  sessionRef.current?.sendToolResponse({
+                    functionResponses: {
+                      id: fc.id,
+                      name: fc.name,
+                      response: { result: `Row appended to sheet '${args.sheetName}' in '${args.spreadsheetName}'.` }
+                    }
+                  });
+                } else if (fc.name === 'draftEmail') {
+                  const args = fc.args as any;
+                  showToast?.(`Simulating: Email draft created for '${args.to}'`, "info");
+                  console.log("Simulating draftEmail with args:", args);
+                  sessionRef.current?.sendToolResponse({
+                    functionResponses: {
+                      id: fc.id,
+                      name: fc.name,
+                      response: { result: `Email draft to ${args.to} created successfully.` }
+                    }
+                  });
+                } else if (fc.name === 'sendEmail') {
+                  const args = fc.args as any;
+                  showToast?.(`Simulating: Email sent to '${args.to}'`, "success");
+                  console.log("Simulating sendEmail with args:", args);
+                  sessionRef.current?.sendToolResponse({
+                    functionResponses: {
+                      id: fc.id,
+                      name: fc.name,
+                      response: { result: `Email sent to ${args.to} successfully.` }
                     }
                   });
                 }
@@ -202,6 +353,7 @@ const VoiceAssistant: React.FC = () => {
           onerror: (e) => {
             console.error("AI Error:", e);
             setStatus("Error encountered. Please try again.");
+            showToast?.("AI session error. Please try again.", "error");
             stopSession(); // Clean up on error
           },
           onclose: (e) => {
@@ -213,12 +365,29 @@ const VoiceAssistant: React.FC = () => {
           responseModalities: [Modality.AUDIO],
           outputAudioTranscription: {}, // Enable model output transcription
           inputAudioTranscription: {}, // Enable user input transcription
-          tools: [{ functionDeclarations: [getAvailableSlotsDeclaration, scheduleDemoDeclaration] }],
-          // CRITICAL FIX: Set thinkingBudget to 0 for real-time responsiveness
-          thinkingConfig: { thinkingBudget: 0 },
+          tools: [{ 
+            functionDeclarations: [
+              getAvailableSlotsDeclaration, 
+              scheduleDemoDeclaration,
+              createCalendarEventDeclaration,
+              getCalendarEventsDeclaration,
+              appendSheetRowDeclaration,
+              draftEmailDeclaration,
+              sendEmailDeclaration,
+            ] 
+          }],
+          thinkingConfig: { thinkingBudget: 0 }, // CRITICAL FIX: Set thinkingBudget to 0 for real-time responsiveness
           systemInstruction: `
             You are the AIBiz Pro demonstration assistant. You must be extremely human-like, professional, and helpful.
-            
+            You have access to powerful tools to help manage business operations:
+            - **getAvailableSlots()**: Check for available demo slots.
+            - **scheduleDemo(fullName, phone, email, dateTime)**: Book a demo appointment.
+            - **createCalendarEvent(summary, description, startDateTime, endDateTime, attendees)**: Create a calendar event for any purpose. Use ISO 8601 for dates (e.g., '2026-01-20T10:00:00').
+            - **getCalendarEvents(startDateTime, endDateTime, query)**: Retrieve events from the calendar within a date range, optionally filtered by a query.
+            - **appendSheetRow(spreadsheetName, sheetName, rowData)**: Add a row of data to a specified Google Sheet. This is ideal for logging new leads, contacts, or any structured data.
+            - **draftEmail(to, subject, body)**: Create an email draft in Gmail.
+            - **sendEmail(to, subject, body)**: Send an email immediately using Gmail.
+
             PHASE 1 (Initiation):
             When the user starts (triggered by 'START_CONVERSATION_TRIGGER'), you MUST speak first with exactly:
             "Hi there, I'm here to give you details on ai biz pro. Would That be ok?"
@@ -234,13 +403,11 @@ const VoiceAssistant: React.FC = () => {
             PHASE 3 (Value Discovery & Booking Flow):
             - Proactively showcase benefits: 24/7 call handling, missed call text-back, auto-booking.
             - Ask discovery questions to raise value (e.g., "How do you handle missed calls currently?", "Are you looking for ways to streamline client intake?").
-            - BOOKING FLOW:
-              1. If the user expresses interest in a demo or appointment, you MUST offer to schedule it.
-              2. Use 'getAvailableSlots' to see when the team is free.
-              3. Present the options to the user.
-              4. To complete the booking, you MUST collect: Full Name, Phone Number, and Email.
-              5. Once you have all details and a chosen time slot, call 'scheduleDemo'.
-              6. Inform the user that a confirmation email has been sent to them and to the admin.
+            - When a user asks to perform an action (like "schedule a meeting", "log this lead", "send an email"), determine which tool is appropriate and gather all necessary parameters from the user before calling the tool.
+            - If a user asks to schedule a demo, use the 'getAvailableSlots' and 'scheduleDemo' functions.
+            - If a user asks to log information or create a record (e.g., "add this person to our leads sheet"), use 'appendSheetRow'.
+            - If a user asks to send or draft an email, use 'sendEmail' or 'draftEmail' as appropriate.
+            - If a user asks about their schedule or to add a general event, use 'getCalendarEvents' or 'createCalendarEvent'.
             - Do NOT dominate. Be concise, warm, and use natural pauses.
           `,
           speechConfig: {
@@ -258,6 +425,7 @@ const VoiceAssistant: React.FC = () => {
     } catch (err) {
       console.error("Failed to start session:", err);
       setStatus("Microphone access denied or error. Please allow microphone permissions and try again.");
+      showToast?.("Failed to start AI session. Check microphone permissions.", "error");
       stopSession(); // Clean up on initial error
     }
   };
@@ -271,6 +439,7 @@ const VoiceAssistant: React.FC = () => {
           className={`relative w-32 h-32 rounded-full flex items-center justify-center text-white shadow-[0_0_50px_rgba(234,179,8,0.3)] transition-all active:scale-95 z-10 ${
             isActive ? 'bg-red-500 shadow-red-500/20' : 'bg-yellow-500 shadow-yellow-500/40'
           }`}
+          aria-label={isActive ? "Stop Voice Assistant" : "Start Voice Assistant"}
         >
           {isActive ? <MicOff size={44} /> : <Mic size={44} />}
         </button>
@@ -299,7 +468,7 @@ const VoiceAssistant: React.FC = () => {
                 ))}
               </div>
               {transcription ? (
-                <p className="text-slate-300 text-sm italic leading-relaxed">
+                <p className="text-slate-300 text-sm italic leading-relaxed" aria-live="polite">
                   "{transcription.length > 150 ? '...' + transcription.slice(-150) : transcription}"
                 </p>
               ) : (
@@ -308,7 +477,11 @@ const VoiceAssistant: React.FC = () => {
             </div>
 
             {bookingStatus && (
-              <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-2xl p-4 flex items-center justify-between animate-in fade-in slide-in-from-top-2">
+              <div 
+                className="bg-yellow-500/10 border border-yellow-500/20 rounded-2xl p-4 flex items-center justify-between animate-in fade-in slide-in-from-top-2"
+                role="status"
+                aria-live="polite"
+              >
                 <div className="flex items-center gap-3 text-yellow-500">
                   {bookingStatus.step.includes('Confirmed') ? <CheckCircle size={20} /> : <CalendarIcon size={20} className="animate-pulse" />}
                   <span className="font-bold text-sm uppercase tracking-wider">{bookingStatus.step}</span>

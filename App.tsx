@@ -9,6 +9,7 @@ import BusinessSearch from './components/BusinessSearch';
 import CalendarView from './components/CalendarView';
 import Integrations from './components/Integrations';
 import Toast from './components/Toast'; // Import the new Toast component
+import VoiceAssistant from './components/VoiceAssistant'; // Import VoiceAssistant to pass showToast
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<View>(View.LANDING);
@@ -19,7 +20,8 @@ const App: React.FC = () => {
   };
 
   if (currentView === View.LANDING) {
-    return <LandingPage onGoToAdmin={() => setCurrentView(View.DASHBOARD)} />;
+    // Pass showToast to LandingPage so it can pass to VoiceAssistant
+    return <LandingPage onGoToAdmin={() => setCurrentView(View.DASHBOARD)} showToast={showToast} />;
   }
 
   const renderContent = () => {

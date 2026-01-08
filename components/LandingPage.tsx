@@ -5,6 +5,7 @@ import { TrendingUp, PhoneCall, Calendar as CalendarIcon, ShieldCheck, Zap, X, B
 
 interface LandingPageProps {
   onGoToAdmin: () => void;
+  showToast: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void; // Added showToast prop
 }
 
 const Logo = ({ size = "md", showBorder = true, className = "" }: { size?: "sm" | "md" | "lg", showBorder?: boolean, className?: string }) => {
@@ -83,7 +84,7 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }) => {
   );
 };
 
-const LandingPage: React.FC<LandingPageProps> = ({ onGoToAdmin }) => {
+const LandingPage: React.FC<LandingPageProps> = ({ onGoToAdmin, showToast }) => {
   const [activeModal, setActiveModal] = useState<'privacy' | 'terms' | null>(null);
 
   return (
@@ -138,7 +139,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onGoToAdmin }) => {
                 </div>
                 
                 <div className="py-10 bg-slate-950/50 rounded-3xl border border-slate-800/50 backdrop-blur-sm">
-                  <VoiceAssistant />
+                  <VoiceAssistant showToast={showToast} /> {/* Pass showToast here */}
                 </div>
                 
                 <div className="flex flex-wrap justify-center gap-8 text-slate-500 text-sm font-medium">
