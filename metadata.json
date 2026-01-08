@@ -1,0 +1,8 @@
+{
+  "name": "AIBiz Pro - Studio build 1_8_26",
+  "description": "An AI-powered business assistant platform that automates inbound/outbound calls, lead capture, and revenue recovery through advanced voice AI and automation.",
+  "requestFramePermissions": [
+    "microphone",
+    "geolocation"
+  ]
+}
